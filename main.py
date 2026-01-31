@@ -1,112 +1,109 @@
 from agent import observe, embed, cluster, reason, decide
+from agent import llm_mock, counterfactual, trajectory  # NEW MODULES
 
-def generate_global_insight(all_analyses):
+def print_agent_report(analysis, decision, alternatives, trend_info, restraint):
     """
-    ACT (Global): triggers alerts ONLY if strict criteria are met.
+    EXPLAIN: Renders the strict 'Agentic Incident Analysis' format.
     """
-    print("\n" + "="*60)
-    print("GLOBAL SYSTEM HEALTH CHECK")
-    print("="*60)
-    
-    severe_alerts = []
-    
-    for a in all_analyses:
-        # --- UPDATED GLOBAL ALERT LOGIC ---
-        # 1. Ignore Noise (-1)
-        # 2. Ignore small clusters (< 3 tickets)
-        # 3. Must be Stage 3 (Live)
-        # 4. Must have High Confidence (>= 0.7)
-        # 5. Must be a Platform Issue
-        if (a['cluster_label'] != -1 and 
-            a['ticket_count'] >= 3 and
-            "Stage 3" in a['stage'] and
-            a['confidence_score'] >= 0.7 and 
-            "Platform" in a['root_cause']):
-            
-            severe_alerts.append(a)
+    print("\n" + "="*50)
+    print("=== AGENTIC INCIDENT ANALYSIS ===")
+    print("="*50)
 
-    if severe_alerts:
-        print(f"🚨 CRITICAL ALERT: {len(severe_alerts)} Verified Production Outage(s) Detected.")
-        print("   Logic: High-confidence clusters matching Stage 3 regression patterns.")
-        print("   RECOMMENDATION: FREEZE DEPLOYMENTS & PAGE ON-CALL ENGINEERING.")
+    print("\nPRIMARY ASSESSMENT:")
+    print(f"- Stage:      {analysis['stage']}")
+    print(f"- Root Cause: {analysis['root_cause']}")
+    print(f"- Confidence: {analysis['confidence']} (LLM-Verified)")
+
+    print("\nEVIDENCE & SIGNALS:")
+    print(f"- Cluster Size:    {analysis['ticket_count']} tickets")
+    print(f"- Dominant Terms:  {analysis.get('reasoning', 'N/A')}")
+    print(f"- Signal Trend:    {trend_info['trajectory']}")
+
+    print("\nALTERNATE HYPOTHESES CONSIDERED:")
+    for idx, alt in enumerate(alternatives, 1):
+        print(f"{idx}. {alt['hypothesis']}")
+        print(f"   REJECTED: {alt['reason_rejected']}")
+
+    print("\nPROACTIVE / REACTIVE DECISION:")
+    print(f"- Action taken: {decision['recommended_action']}")
+    print(f"- Risk level:   {decision['risk_level']}")
+
+    print("\nAUTOMATION RESTRAINT:")
+    print(f"- Action NOT taken: {restraint['action_not_taken']}")
+    print(f"- Reason:           {restraint['reason']}")
+
+    print("\nPROJECTED OUTCOME:")
+    print(f"- Expectation: {trend_info['prediction']}")
+    print("="*50 + "\n")
+
+
+def generate_restraint_logic(risk_level, confidence):
+    """
+    DECIDE (Restraint): Explicitly explains what the agent WON'T do.
+    """
+    if risk_level == "High":
+        return {
+            "action_not_taken": "Auto-Rollback of API Deployment",
+            "reason": "Risk is Critical, but human approval is required for non-safe rollback operations."
+        }
+    elif float(confidence) < 0.8:
+        return {
+            "action_not_taken": "Auto-Email Blast to Merchants",
+            "reason": f"Confidence ({confidence}) is below the 0.8 threshold for automated external comms."
+        }
     else:
-        # Fallback for standard insights
-        print("✅ STATUS: Operational. No critical platform outages detected.")
-        print("   NOTE: Monitoring standard support volume.")
-
-def run_proactive_check(signals, all_analyses):
-    """
-    REASON (Phase 2): Checks for high-error signals NOT yet reflected in tickets.
-    """
-    if not signals:
-        return
-
-    # 1. Check Signal Threshold
-    checkout_error_high = (
-        signals['signal'] == 'checkout_error_rate' and 
-        signals['value'] > 25
-    )
-
-    if not checkout_error_high:
-        return
-
-    # 2. Check if Ticket Clusters already cover this
-    # Look for "checkout" or "payment" in any detected cluster's stage or root cause
-    ticket_coverage_exists = False
-    for analysis in all_analyses:
-        text_dump = (analysis['stage'] + analysis['root_cause']).lower()
-        if 'checkout' in text_dump or 'payment' in text_dump:
-            ticket_coverage_exists = True
-            break
-    
-    # 3. PROACTIVE ALERT RULE
-    # IF error is high AND no tickets exist yet -> Warn Support
-    if not ticket_coverage_exists:
-        print("\n" + "-"*40)
-        print("PROACTIVE DETECTION")
-        print(f"Detected elevated {signals['signal']} ({signals['value']}%) in last {signals['time_window']}.")
-        print("No related support tickets reported yet.")
-        print("Assumption: Issue detected before merchant reports.")
-        print("Action: Notify support team and monitor closely.")
-        print("-"*40)
+        return {
+            "action_not_taken": "Escalation to VP Engineering",
+            "reason": "Issue severity (Medium/Low) does not meet SLA requirements for executive wake-up."
+        }
 
 def main():
-    print("=== STARTING AGENTIC SUPPORT OPERATIONS MANAGER ===\n")
+    print("Initializing Agentic System...\n")
 
-    # 1. OBSERVE (Tickets)
+    # 1. OBSERVE
     tickets = observe.load_tickets()
-    
-    # 1b. OBSERVE (System Signals - NEW)
-    signals = observe.load_system_signals() 
+    signals = observe.load_system_signals()
 
-    # 2. REASON (Vectorize & Cluster)
+    # 2. VECTORIZE & CLUSTER
     embeddings = embed.generate_embeddings(tickets)
     clusters = cluster.cluster_tickets(tickets, embeddings)
 
-    all_cluster_analyses = []
+    # 3. ANALYZE SYSTEM TRAJECTORY (Global Context)
+    traj_label, prediction = trajectory.analyze_signal_trend(signals)
+    trend_info = {"trajectory": traj_label, "prediction": prediction}
 
-    print("\n--- DETAILED CLUSTER REPORTS ---\n")
-
-    # Iterate through ALL clusters
+    # 4. AGENT LOOP OVER CLUSTERS
     for label, cluster_tickets in clusters.items():
-        analysis = reason.analyze_cluster(label, cluster_tickets)
-        decision = decide.determine_action(analysis)
+        if label == -1: continue # Skip noise for the deep report
 
-        # (Existing print logic preserved...)
-        print(f"[{analysis['cluster_name']}] ({analysis['ticket_count']} tickets)")
-        print(f"  • Inferred Stage:  {analysis['stage']}")
-        print(f"  • Root Cause:      {analysis['root_cause']}")
-        print(f"  • Risk Level:      {decision['risk_level']}")
-        print(f"  • ACTION:          {decision['recommended_action']}")
-        print("-" * 40)
-        
-        all_cluster_analyses.append(analysis)
+        # A. AGGREGATE TEXT
+        cluster_text = " ".join([t['message'] for t in cluster_tickets])
 
-    # 5. GLOBAL ACT (Existing Ticket Alerts)
-    generate_global_insight(all_cluster_analyses)
+        # B. HYBRID REASONING (Rule + LLM)
+        # We use the LLM Mock to get the "Smart" analysis
+        llm_analysis = llm_mock.analyze_cluster_semantically(cluster_text)
+        llm_analysis['ticket_count'] = len(cluster_tickets)
 
-    # 6. PROACTIVE ACT (New Phase 2 Check)
-    run_proactive_check(signals, all_cluster_analyses)
+        # C. COUNTERFACTUAL REASONING
+        # "Why is it NOT the other things?"
+        alternatives = counterfactual.generate_alternatives(
+            llm_analysis['root_cause'], 
+            cluster_text
+        )
+
+        # D. DECIDE ACTION
+        # Map LLM analysis to decision logic
+        decision = decide.determine_action(llm_analysis)
+
+        # E. AUTOMATION RESTRAINT
+        # Why did we stop here?
+        restraint = generate_restraint_logic(
+            decision['risk_level'], 
+            llm_analysis['confidence']
+        )
+
+        # F. EXPLAIN / OUTPUT
+        print_agent_report(llm_analysis, decision, alternatives, trend_info, restraint)
 
 if __name__ == "__main__":
     main()
