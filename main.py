@@ -34,45 +34,79 @@ def generate_global_insight(all_analyses):
         print("✅ STATUS: Operational. No critical platform outages detected.")
         print("   NOTE: Monitoring standard support volume.")
 
+def run_proactive_check(signals, all_analyses):
+    """
+    REASON (Phase 2): Checks for high-error signals NOT yet reflected in tickets.
+    """
+    if not signals:
+        return
+
+    # 1. Check Signal Threshold
+    checkout_error_high = (
+        signals['signal'] == 'checkout_error_rate' and 
+        signals['value'] > 25
+    )
+
+    if not checkout_error_high:
+        return
+
+    # 2. Check if Ticket Clusters already cover this
+    # Look for "checkout" or "payment" in any detected cluster's stage or root cause
+    ticket_coverage_exists = False
+    for analysis in all_analyses:
+        text_dump = (analysis['stage'] + analysis['root_cause']).lower()
+        if 'checkout' in text_dump or 'payment' in text_dump:
+            ticket_coverage_exists = True
+            break
+    
+    # 3. PROACTIVE ALERT RULE
+    # IF error is high AND no tickets exist yet -> Warn Support
+    if not ticket_coverage_exists:
+        print("\n" + "-"*40)
+        print("PROACTIVE DETECTION")
+        print(f"Detected elevated {signals['signal']} ({signals['value']}%) in last {signals['time_window']}.")
+        print("No related support tickets reported yet.")
+        print("Assumption: Issue detected before merchant reports.")
+        print("Action: Notify support team and monitor closely.")
+        print("-"*40)
+
 def main():
     print("=== STARTING AGENTIC SUPPORT OPERATIONS MANAGER ===\n")
 
-    # 1. OBSERVE
+    # 1. OBSERVE (Tickets)
     tickets = observe.load_tickets()
+    
+    # 1b. OBSERVE (System Signals - NEW)
+    signals = observe.load_system_signals() 
 
-    # 2. REASON (Part A: Vectorize & Cluster)
+    # 2. REASON (Vectorize & Cluster)
     embeddings = embed.generate_embeddings(tickets)
     clusters = cluster.cluster_tickets(tickets, embeddings)
 
-    # List to store analysis for the Global Insight step
     all_cluster_analyses = []
 
     print("\n--- DETAILED CLUSTER REPORTS ---\n")
 
-    # Iterate through ALL clusters (including Noise/-1)
+    # Iterate through ALL clusters
     for label, cluster_tickets in clusters.items():
-        
-        # 2. REASON (Part B: Inference)
-        # We pass the label to handle the "Noise" cluster logic inside reason.py
         analysis = reason.analyze_cluster(label, cluster_tickets)
-
-        # 3. DECIDE
         decision = decide.determine_action(analysis)
 
-        # 4. EXPLAIN (Output)
+        # (Existing print logic preserved...)
         print(f"[{analysis['cluster_name']}] ({analysis['ticket_count']} tickets)")
         print(f"  • Inferred Stage:  {analysis['stage']}")
         print(f"  • Root Cause:      {analysis['root_cause']}")
-        print(f"  • Confidence:      {analysis['confidence']}")
         print(f"  • Risk Level:      {decision['risk_level']}")
         print(f"  • ACTION:          {decision['recommended_action']}")
         print("-" * 40)
         
-        # Save for global insight
         all_cluster_analyses.append(analysis)
 
-    # 5. GLOBAL ACT
+    # 5. GLOBAL ACT (Existing Ticket Alerts)
     generate_global_insight(all_cluster_analyses)
+
+    # 6. PROACTIVE ACT (New Phase 2 Check)
+    run_proactive_check(signals, all_cluster_analyses)
 
 if __name__ == "__main__":
     main()

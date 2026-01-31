@@ -1,0 +1,5 @@
+{
+  "signal": "checkout_error_rate",
+  "value": 32,
+  "time_window": "15min"
+}
