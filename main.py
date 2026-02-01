@@ -1,5 +1,6 @@
 from agent import observe, embed, cluster, reason, decide
-from agent import llm_mock, counterfactual, trajectory  # NEW MODULES
+from agent import llm_mock, counterfactual, trajectory, repro_pack 
+# Removed digital_twin import
 
 def print_agent_report(analysis, decision, alternatives, trend_info, restraint):
     """
@@ -41,15 +42,21 @@ def generate_restraint_logic(risk_level, confidence):
     """
     DECIDE (Restraint): Explicitly explains what the agent WON'T do.
     """
+    # Safety casting
+    try:
+        conf_val = float(confidence)
+    except:
+        conf_val = 0.5
+
     if risk_level == "High":
         return {
             "action_not_taken": "Auto-Rollback of API Deployment",
             "reason": "Risk is Critical, but human approval is required for non-safe rollback operations."
         }
-    elif float(confidence) < 0.8:
+    elif conf_val < 0.8:
         return {
             "action_not_taken": "Auto-Email Blast to Merchants",
-            "reason": f"Confidence ({confidence}) is below the 0.8 threshold for automated external comms."
+            "reason": f"Confidence ({conf_val}) is below the 0.8 threshold for automated external comms."
         }
     else:
         return {
@@ -80,23 +87,21 @@ def main():
         cluster_text = " ".join([t['message'] for t in cluster_tickets])
 
         # B. HYBRID REASONING (Rule + LLM)
-        # We use the LLM Mock to get the "Smart" analysis
         llm_analysis = llm_mock.analyze_cluster_semantically(cluster_text)
         llm_analysis['ticket_count'] = len(cluster_tickets)
 
         # C. COUNTERFACTUAL REASONING
-        # "Why is it NOT the other things?"
         alternatives = counterfactual.generate_alternatives(
             llm_analysis['root_cause'], 
             cluster_text
         )
 
         # D. DECIDE ACTION
-        # Map LLM analysis to decision logic
         decision = decide.determine_action(llm_analysis)
 
+        # (Digital Twin Analysis Removed)
+
         # E. AUTOMATION RESTRAINT
-        # Why did we stop here?
         restraint = generate_restraint_logic(
             decision['risk_level'], 
             llm_analysis['confidence']
@@ -104,6 +109,26 @@ def main():
 
         # F. EXPLAIN / OUTPUT
         print_agent_report(llm_analysis, decision, alternatives, trend_info, restraint)
+
+        # G. REPRO PACK GENERATION (Conditional)
+        conf_val = float(llm_analysis.get('confidence', 0))
+        is_stage_3 = "Stage 3" in llm_analysis.get('stage', '')
+        is_platform_issue = "Platform Issue" in llm_analysis.get('root_cause', '')
+
+        if is_stage_3 and is_platform_issue and conf_val >= 0.8:
+            path, inc_id, r_type, triggers = repro_pack.generate_repro_pack(
+                llm_analysis, 
+                cluster_tickets, 
+                signals
+            )
+            
+            header_suffix = "(Preliminary)" if r_type == "preliminary" else ""
+            print(f"REPRODUCTION PACK GENERATED {header_suffix}")
+            print(f"- Incident ID: {inc_id}")
+            print(f"- Saved to:    {path}")
+            print(f"- Type:        {r_type.title()}")
+            print(f"- Triggers:    {', '.join(triggers)}")
+            print("-" * 50)
 
 if __name__ == "__main__":
     main()
